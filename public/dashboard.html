@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>記帳儀表板</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        color: #17212b;
+        background: #f3f6f8;
+      }
+
+      body {
+        margin: 0;
+      }
+
+      header, main {
+        width: min(100% - 32px, 1000px);
+        margin: 0 auto;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 28px 0 16px;
+      }
+
+      h1, h2, p {
+        margin-top: 0;
+      }
+
+      h1 {
+        margin-bottom: 4px;
+        font-size: 1.65rem;
+      }
+
+      .muted, .note {
+        color: #64727d;
+      }
+
+      button {
+        border: 0;
+        border-radius: 8px;
+        padding: 10px 14px;
+        background: #176b58;
+        color: white;
+        font: inherit;
+        cursor: pointer;
+      }
+
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 14px;
+        margin: 12px 0 24px;
+      }
+
+      .card, .panel {
+        border: 1px solid #e1e7eb;
+        border-radius: 12px;
+        background: white;
+        box-shadow: 0 2px 8px #17212b0a;
+      }
+
+      .card {
+        padding: 18px;
+      }
+
+      .card-label {
+        margin-bottom: 10px;
+        color: #64727d;
+        font-size: .9rem;
+      }
+
+      .card-value {
+        margin: 0;
+        font-size: 1.55rem;
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+
+      .panel {
+        margin-bottom: 20px;
+        padding: 20px;
+      }
+
+      .panel h2 {
+        margin-bottom: 14px;
+        font-size: 1.15rem;
+      }
+
+      .bar-chart {
+        display: grid;
+        gap: 12px;
+      }
+
+      .bar-row {
+        display: grid;
+        grid-template-columns: minmax(58px, 90px) minmax(60px, 1fr) minmax(74px, auto);
+        align-items: center;
+        gap: 10px;
+      }
+
+      .bar-track {
+        height: 14px;
+        overflow: hidden;
+        border-radius: 7px;
+        background: #edf1f3;
+      }
+
+      .bar-fill {
+        height: 100%;
+        border-radius: inherit;
+      }
+
+      .bar-amount {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .expense-filters, .pagination {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      .expense-filters input {
+        border: 1px solid #cbd4da;
+        border-radius: 6px;
+        padding: 7px;
+        font: inherit;
+      }
+
+      .pagination {
+        justify-content: space-between;
+        margin: 14px 0 0;
+      }
+
+      button:disabled {
+        opacity: .5;
+        cursor: not-allowed;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+      }
+
+      th, td {
+        padding: 11px 8px;
+        border-bottom: 1px solid #edf0f2;
+        white-space: nowrap;
+      }
+
+      th {
+        color: #64727d;
+        font-size: .85rem;
+        font-weight: 600;
+      }
+
+      td.description {
+        white-space: normal;
+      }
+
+      .error {
+        color: #a32121;
+      }
+
+      .delete-button {
+        padding: 6px 10px;
+        background: #a32121;
+        font-size: .9rem;
+      }
+
+      @media (max-width: 560px) {
+        header {
+          align-items: flex-start;
+        }
+
+        .panel {
+          padding: 14px;
+        }
+
+        .bar-row {
+          grid-template-columns: 58px minmax(40px, 1fr) minmax(68px, auto);
+          gap: 6px;
+        }
+
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>記帳儀表板</h1>
+        <p id="month" class="muted">載入中…</p>
+      </div>
+      <button id="refresh" type="button">重新整理</button>
+    </header>
+    <main>
+      <p id="error" class="error" role="alert"></p>
+      <section class="cards" aria-label="本月摘要">
+        <article class="card">
+          <p class="card-label">本月支出</p>
+          <p id="monthly-total" class="card-value">—</p>
+        </article>
+        <article class="card">
+          <p class="card-label">本月記帳筆數</p>
+          <p id="monthly-count" class="card-value">—</p>
+        </article>
+        <article class="card">
+          <p class="card-label">本月預算</p>
+          <p id="monthly-budget" class="card-value">—</p>
+        </article>
+        <article class="card">
+          <p class="card-label">Gemini 成功請求（本月）</p>
+          <p id="gemini-requests" class="card-value">—</p>
+        </article>
+        <article class="card">
+          <p class="card-label">Gemini tokens（本月）</p>
+          <p id="gemini-tokens" class="card-value">—</p>
+        </article>
+        <article class="card">
+          <p class="card-label">未能處理的使用者訊息（本月）</p>
+          <p id="unanswered-count" class="card-value">—</p>
+        </article>
+      </section>
+      <section class="panel">
+        <h2>本月類別支出（橫向長條圖）</h2>
+        <div id="category-chart" class="bar-chart" role="img" aria-label="本月各類別支出長條圖"></div>
+      </section>
+      <section class="panel">
+        <h2>Gemini API 用量</h2>
+        <p id="token-breakdown">輸入 — tokens · 輸出 — tokens</p>
+        <p class="note">此處統計本機器人成功請求的 API 用量，不代表 Google 帳戶剩餘免費額度。</p>
+      </section>
+      <section class="panel">
+        <h2>未能處理的使用者訊息（本月）</h2>
+        <p id="unanswered-summary" class="muted">載入中…</p>
+        <p class="note">
+          問題文字與時間儲存在 Cloudflare D1 的 <code>unanswered_questions</code> 資料表；
+          包含模型無法理解及系統回覆「目前無法處理這則訊息」的狀況。
+          表格顯示最新 20 筆；下方可匯出本月全部資料。
+        </p>
+        <div class="expense-filters">
+          <button id="export-unanswered-csv" type="button">匯出 CSV</button>
+          <button id="export-unanswered-json" type="button">匯出 JSON</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>時間</th><th>使用者問題</th></tr></thead>
+            <tbody id="unanswered-questions"></tbody>
+          </table>
+        </div>
+        <p id="unanswered-empty" class="muted" hidden>本月沒有未能理解的問題。</p>
+      </section>
+      <section class="panel">
+        <h2>LINE 聊天室功能選單</h2>
+        <p id="rich-menu-status" class="muted">載入中…</p>
+        <button id="setup-rich-menu" type="button">設定常駐功能選單</button>
+        <p class="note">設定後會連結到此機器人允許的 LINE 使用者；此操作會呼叫 LINE Messaging API。</p>
+      </section>
+      <section class="panel">
+        <h2>最近記帳</h2>
+        <form id="expense-filters" class="expense-filters">
+          <label>開始 <input id="date-from" type="date"></label>
+          <label>結束 <input id="date-to" type="date"></label>
+          <button type="submit">查詢</button>
+          <button id="export-csv" type="button">匯出 CSV</button>
+        </form>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>日期</th><th>類別</th><th>品項</th><th>金額</th><th>操作</th></tr>
+            </thead>
+            <tbody id="expenses"></tbody>
+          </table>
+        </div>
+        <p id="empty" class="muted" hidden>目前沒有記帳紀錄。</p>
+        <p id="undo-notice" class="muted" hidden>
+          最近刪除的記帳可在 5 分鐘內復原。
+          <button id="undo-delete" type="button">復原刪除</button>
+        </p>
+        <div class="pagination">
+          <button id="previous-page" type="button">上一頁</button>
+          <span id="page-status" class="muted">—</span>
+          <button id="next-page" type="button">下一頁</button>
+        </div>
+      </section>
+    </main>
+    <script>
+      const numberFormat = new Intl.NumberFormat("zh-TW");
+      const currencyFormat = new Intl.NumberFormat("zh-TW", {
+        style: "currency",
+        currency: "TWD",
+        maximumFractionDigits: 0,
+      });
+      const categoryColors = [
+        "#176b58",
+        "#3384a5",
+        "#e29c3d",
+        "#9a6ac1",
+        "#d45d5d",
+        "#70a64b",
+        "#d17b45",
+        "#7b8794",
+      ];
+
+      let currentPage = 1;
+      let totalPages = 1;
+
+      async function loadDashboard(page = currentPage) {
+        const errorElement = document.querySelector("#error");
+        errorElement.textContent = "";
+        try {
+          const params = new URLSearchParams({ page: String(page) });
+          const from = document.querySelector("#date-from").value;
+          const to = document.querySelector("#date-to").value;
+          if (from) params.set("from", from);
+          if (to) params.set("to", to);
+          const response = await fetch(`/api/dashboard?${params}`, { cache: "no-store" });
+          if (!response.ok) {
+            throw new Error(`載入失敗（HTTP ${response.status}）`);
+          }
+          const data = await response.json();
+          renderDashboard(data);
+        } catch (error) {
+          errorElement.textContent = error instanceof Error ? error.message : "載入儀表板失敗";
+        }
+      }
+
+      function renderDashboard(data) {
+        document.querySelector("#month").textContent = `${data.month} 摘要`;
+        document.querySelector("#monthly-total").textContent =
+          currencyFormat.format(data.expenses.monthlyTotal);
+        document.querySelector("#monthly-count").textContent =
+          numberFormat.format(data.expenses.monthlyCount);
+        document.querySelector("#monthly-budget").textContent =
+          data.expenses.budget === null ? "未設定" : currencyFormat.format(data.expenses.budget);
+        document.querySelector("#gemini-requests").textContent =
+          numberFormat.format(data.gemini.monthlyRequests);
+        document.querySelector("#gemini-tokens").textContent =
+          numberFormat.format(data.gemini.monthlyTotalTokens);
+        document.querySelector("#token-breakdown").textContent =
+          `輸入 ${numberFormat.format(data.gemini.monthlyInputTokens)} tokens · ` +
+          `輸出 ${numberFormat.format(data.gemini.monthlyOutputTokens)} tokens`;
+        document.querySelector("#unanswered-count").textContent =
+          numberFormat.format(data.unanswered.count);
+        document.querySelector("#unanswered-summary").textContent =
+          `本月共 ${numberFormat.format(data.unanswered.count)} 則；以下顯示最新 20 筆。`;
+
+        const unansweredRows = document.querySelector("#unanswered-questions");
+        unansweredRows.replaceChildren();
+        for (const item of data.unanswered.recent) {
+          const row = document.createElement("tr");
+          const time = document.createElement("td");
+          time.textContent = new Date(`${item.createdAt.replace(" ", "T")}Z`).toLocaleString(
+            "zh-TW",
+            { timeZone: "Asia/Taipei" },
+          );
+          const question = document.createElement("td");
+          question.className = "description";
+          question.textContent = item.question;
+          row.append(time, question);
+          unansweredRows.append(row);
+        }
+        document.querySelector("#unanswered-empty").hidden = data.unanswered.recent.length > 0;
+        const richMenuStatus = document.querySelector("#rich-menu-status");
+        richMenuStatus.textContent = data.lineRichMenuConfigured
+          ? "常駐功能選單已設定。"
+          : "尚未設定常駐功能選單。";
+        document.querySelector("#setup-rich-menu").textContent = data.lineRichMenuConfigured
+          ? "重新連結常駐功能選單"
+          : "設定常駐功能選單";
+
+        renderCategoryChart(data.expenses.byCategory);
+        currentPage = data.expenses.page;
+        totalPages = data.expenses.totalPages;
+        document.querySelector("#page-status").textContent =
+          `第 ${currentPage} / ${totalPages} 頁 · 共 ${numberFormat.format(data.expenses.totalCount)} 筆`;
+        document.querySelector("#previous-page").disabled = currentPage <= 1;
+        document.querySelector("#next-page").disabled = currentPage >= totalPages;
+
+        const rows = document.querySelector("#expenses");
+        rows.replaceChildren();
+        for (const expense of data.expenses.recent) {
+          const row = document.createElement("tr");
+          for (const value of [
+            expense.occurredAt.slice(0, 10),
+            expense.category,
+            expense.description,
+            currencyFormat.format(expense.amount),
+          ]) {
+            const cell = document.createElement("td");
+            cell.textContent = value;
+            row.append(cell);
+          }
+          const actionCell = document.createElement("td");
+          const deleteButton = document.createElement("button");
+          deleteButton.type = "button";
+          deleteButton.className = "delete-button";
+          deleteButton.textContent = "刪除";
+          deleteButton.addEventListener("click", () => deleteExpense(expense.id));
+          actionCell.append(deleteButton);
+          row.append(actionCell);
+          rows.append(row);
+        }
+        document.querySelector("#empty").hidden = data.expenses.recent.length > 0;
+      }
+
+      function renderCategoryChart(categories) {
+        const chart = document.querySelector("#category-chart");
+        const maximum = Math.max(0, ...categories.map((item) => item.amount));
+        chart.replaceChildren();
+
+        categories.forEach((item, index) => {
+          const color = categoryColors[index % categoryColors.length];
+          const row = document.createElement("div");
+          row.className = "bar-row";
+          const name = document.createElement("span");
+          name.textContent = item.category;
+          const track = document.createElement("div");
+          track.className = "bar-track";
+          const fill = document.createElement("div");
+          fill.className = "bar-fill";
+          fill.style.width = maximum > 0 ? `${(item.amount / maximum) * 100}%` : "0%";
+          fill.style.backgroundColor = color;
+          track.append(fill);
+          const amount = document.createElement("span");
+          amount.className = "bar-amount";
+          amount.textContent = currencyFormat.format(item.amount);
+          row.append(name, track, amount);
+          chart.append(row);
+        });
+
+        chart.setAttribute(
+          "aria-label",
+          "本月各類別支出長條圖，每列顯示類別名稱和金額",
+        );
+      }
+
+      async function deleteExpense(id) {
+        if (!window.confirm("確定要刪除這筆記帳嗎？")) {
+          return;
+        }
+        const errorElement = document.querySelector("#error");
+        errorElement.textContent = "";
+        try {
+          const response = await fetch(`/api/expenses/${encodeURIComponent(id)}`, {
+            method: "DELETE",
+          });
+          if (!response.ok) {
+            throw new Error(`刪除失敗（HTTP ${response.status}）`);
+          }
+          document.querySelector("#undo-notice").hidden = false;
+          await loadDashboard(currentPage);
+        } catch (error) {
+          errorElement.textContent = error instanceof Error ? error.message : "刪除記帳失敗";
+        }
+      }
+
+      async function undoDelete() {
+        const errorElement = document.querySelector("#error");
+        errorElement.textContent = "";
+        try {
+          const response = await fetch("/api/expenses/undo", { method: "POST" });
+          if (!response.ok) {
+            throw new Error(`復原失敗（HTTP ${response.status}）`);
+          }
+          document.querySelector("#undo-notice").hidden = true;
+          await loadDashboard(currentPage);
+        } catch (error) {
+          errorElement.textContent = error instanceof Error ? error.message : "復原刪除失敗";
+        }
+      }
+
+      async function setupRichMenu() {
+        const errorElement = document.querySelector("#error");
+        const button = document.querySelector("#setup-rich-menu");
+        errorElement.textContent = "";
+        button.disabled = true;
+        try {
+          const response = await fetch("/api/line-rich-menu/setup", { method: "POST" });
+          if (!response.ok) {
+            throw new Error(`設定功能選單失敗（HTTP ${response.status}）`);
+          }
+          await loadDashboard(currentPage);
+          document.querySelector("#rich-menu-status").textContent =
+            "常駐功能選單已建立並連結到允許的 LINE 使用者。";
+        } catch (error) {
+          errorElement.textContent = error instanceof Error ? error.message : "設定功能選單失敗";
+        } finally {
+          button.disabled = false;
+        }
+      }
+
+      function currentFilterQuery() {
+        const params = new URLSearchParams();
+        const from = document.querySelector("#date-from").value;
+        const to = document.querySelector("#date-to").value;
+        if (from) params.set("from", from);
+        if (to) params.set("to", to);
+        return params.toString();
+      }
+
+      document.querySelector("#refresh").addEventListener("click", () => loadDashboard(currentPage));
+      document.querySelector("#expense-filters").addEventListener("submit", (event) => {
+        event.preventDefault();
+        loadDashboard(1);
+      });
+      document.querySelector("#previous-page").addEventListener("click", () => {
+        if (currentPage > 1) loadDashboard(currentPage - 1);
+      });
+      document.querySelector("#next-page").addEventListener("click", () => {
+        if (currentPage < totalPages) loadDashboard(currentPage + 1);
+      });
+      document.querySelector("#export-csv").addEventListener("click", () => {
+        const query = currentFilterQuery();
+        window.location.href = `/api/expenses.csv${query ? `?${query}` : ""}`;
+      });
+      document.querySelector("#export-unanswered-csv").addEventListener("click", () => {
+        window.location.href = "/api/unanswered-questions.csv";
+      });
+      document.querySelector("#export-unanswered-json").addEventListener("click", () => {
+        window.location.href = "/api/unanswered-questions.json";
+      });
+      document.querySelector("#undo-delete").addEventListener("click", undoDelete);
+      document.querySelector("#setup-rich-menu").addEventListener("click", setupRichMenu);
+      loadDashboard();
+    </script>
+  </body>
+</html>
