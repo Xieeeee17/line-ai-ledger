@@ -817,23 +817,96 @@ async function applyPendingEditAmountFollowUp(
 }
 
 function parseEditAmountFollowUp(text: string): number | null {
-  const match =
-    /^(?:(?:金額(?:改成|改為|是|為|應該是|應為)?|改成|改為|改到|更正為|更正成|調整為|設為|是|應該是|應為|其實是)\s*)?(?:NT\$|NTD|新台幣)?\s*(\d{1,3}(?:,\d{3})*|\d+)\s*(?:元整|元|塊)?$/iu.exec(
-      text.trim(),
-    );
-  if (!match) return null;
-  const amount = Number(match[1].replace(/,/g, ""));
+  let value = text.trim();
+  if (!value || value.length > 100) return null;
+
+  const prefixes = [
+    "金額改成", "金額改為", "金額是", "金額為", "金額應該是", "金額應為", "金額",
+    "改成", "改為", "改到", "更正為", "更正成", "調整為", "設為",
+    "應該是", "應為", "其實是", "是",
+  ];
+  for (const prefix of prefixes) {
+    if (value.startsWith(prefix)) {
+      value = value.slice(prefix.length).trim();
+      break;
+    }
+  }
+
+  for (const prefix of ["NT$", "NTD", "新台幣"]) {
+    if (value.startsWith(prefix)) {
+      value = value.slice(prefix.length).trim();
+      break;
+    }
+  }
+  for (const suffix of ["元整", "元", "塊"]) {
+    if (value.endsWith(suffix)) {
+      value = value.slice(0, -suffix.length).trim();
+      break;
+    }
+  }
+  if (!value) return null;
+
+  let digits = value;
+  if (value.includes(",")) {
+    const groups = value.split(",");
+    if (
+      groups.length < 2 ||
+      groups[0].length < 1 ||
+      groups[0].length > 3 ||
+      groups.slice(1).some((group) => group.length !== 3)
+    ) {
+      return null;
+    }
+    digits = value.replace(/,/g, "");
+  }
+  if (!digits || digits.length > 16 || [...digits].some((character) => character < "0" || character > "9")) {
+    return null;
+  }
+  const amount = Number(digits);
   return Number.isSafeInteger(amount) ? amount : null;
+}
+
+function containsAmountMention(text: string): boolean {
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] < "0" || text[index] > "9") continue;
+    let cursor = index;
+    while (cursor < text.length && text[cursor] >= "0" && text[cursor] <= "9") {
+      cursor += 1;
+    }
+    while (cursor < text.length && /\s/u.test(text[cursor])) cursor += 1;
+    if (text[cursor] === "元" || text[cursor] === "塊") return true;
+    index = cursor - 1;
+  }
+  return false;
 }
 
 function parseEditTargetRequest(
   text: string,
 ): { criteria: ExpenseDeletionCriteria | null } | null {
-  const command = /^(?:請|幫我|可以)?\s*(?:編輯|修改|更正|修正)\s*(.*)$/u.exec(text.trim());
-  if (!command) return null;
-  const target = command[1].trim();
+  let value = text.trim();
+  if (!value || value.length > 200) return null;
+  for (const prefix of ["請", "幫我", "可以"]) {
+    if (value.startsWith(prefix)) {
+      value = value.slice(prefix.length).trimStart();
+      break;
+    }
+  }
+  let commandLength = 0;
+  for (const command of ["編輯", "修改", "更正", "修正"]) {
+    if (value.startsWith(command)) {
+      commandLength = command.length;
+      break;
+    }
+  }
+  if (!commandLength) return null;
+  const target = value.slice(commandLength).trim();
   if (
-    /\d+\s*(?:元|塊)|(?:改成|改為|改到|更正為|調整為)/u.test(target) ||
+    containsAmountMention(target) ||
+    target.includes("改成") ||
+    target.includes("改為") ||
+    target.includes("改到") ||
+    target.includes("更正為") ||
+    target.includes("調整為") ||
     !target
   ) {
     return target ? null : { criteria: null };

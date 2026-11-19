@@ -5,6 +5,30 @@ import worker from "../src/index.ts";
 const USER_ID = "allowed-user";
 const SECRET = "test-line-secret";
 
+function isGeminiApiUrl(url) {
+  try {
+    return new URL(String(url)).hostname === "generativelanguage.googleapis.com";
+  } catch {
+    return false;
+  }
+}
+
+test("Gemini API URL matching uses the exact hostname", () => {
+  assert.equal(
+    isGeminiApiUrl("https://generativelanguage.googleapis.com/v1beta/interactions"),
+    true,
+  );
+  assert.equal(
+    isGeminiApiUrl("https://generativelanguage.googleapis.com.evil.example/v1beta/interactions"),
+    false,
+  );
+  assert.equal(
+    isGeminiApiUrl("https://example.com/generativelanguage.googleapis.com"),
+    false,
+  );
+  assert.equal(isGeminiApiUrl("not a url"), false);
+});
+
 class FakeStatement {
   constructor(database, query) {
     this.database = database;
@@ -429,7 +453,7 @@ test("duplicate LINE webhook events are processed only once", async () => {
   const replies = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, options) => {
-    if (String(url).includes("generativelanguage.googleapis.com")) {
+    if (isGeminiApiUrl(url)) {
       return makeModelResponse({ intent: "monthly_total" });
     }
     replies.push(JSON.parse(options.body));
@@ -453,7 +477,7 @@ test("manual commands work during model outages and model recovery is detected",
   const replies = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, options) => {
-    if (String(url).includes("generativelanguage.googleapis.com")) {
+    if (isGeminiApiUrl(url)) {
       if (JSON.parse(options.body).input.startsWith("指令記帳")) {
         return Response.json({ error: { message: "temporarily unavailable" } }, { status: 503 });
       }
@@ -501,7 +525,7 @@ test("deletion requires confirmation and only affects the matched user's expense
   const replies = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, options) => {
-    if (String(url).includes("generativelanguage.googleapis.com")) {
+    if (isGeminiApiUrl(url)) {
       return makeModelResponse({
         intent: "delete_expense",
         description: "午餐",
@@ -543,7 +567,7 @@ test("editing an expense is staged until the user confirms", async () => {
   const replies = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, options) => {
-    if (String(url).includes("generativelanguage.googleapis.com")) {
+    if (isGeminiApiUrl(url)) {
       return makeModelResponse({
         intent: "edit_expense",
         criteria: {
@@ -586,7 +610,7 @@ test("guided edit asks for the new amount before staging a confirmation", async 
   const replies = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, options) => {
-    if (String(url).includes("generativelanguage.googleapis.com")) {
+    if (isGeminiApiUrl(url)) {
       return makeModelResponse({ intent: "unknown" });
     }
     replies.push(JSON.parse(options.body));
@@ -612,6 +636,40 @@ test("guided edit asks for the new amount before staging a confirmation", async 
   }
 });
 
+test("guided edit rejects oversized and malformed amount follow-ups", async () => {
+  const database = new FakeDatabase();
+  database.expenses.push({
+    id: 1,
+    user_id: USER_ID,
+    amount: 40,
+    category: "交通",
+    description: "公車",
+    occurred_at: `${currentTaipeiMonthDay(17)}T04:00:00.000Z`,
+  });
+  const replies = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    if (isGeminiApiUrl(url)) {
+      return makeModelResponse({ intent: "unknown" });
+    }
+    replies.push(JSON.parse(options.body));
+    return new Response(null, { status: 200 });
+  };
+  try {
+    await sendWebhook(database, "編輯公車記帳", "event-edit-malformed-start");
+    await sendWebhook(database, `改成 ${"9".repeat(101)} 元`, "event-edit-malformed-amount");
+    assert.equal(database.expenses[0].amount, 40);
+    assert.equal(database.pendingEditTargets.has(USER_ID), true);
+    assert.equal(database.pendingEdits.has(USER_ID), false);
+
+    await sendWebhook(database, "改成 1,2 元", "event-edit-invalid-grouping");
+    assert.equal(database.expenses[0].amount, 40);
+    assert.equal(database.pendingEdits.has(USER_ID), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("monthly expense list is a paginated visual Flex message", async () => {
   const database = new FakeDatabase();
   for (let index = 1; index <= 7; index += 1) {
@@ -627,7 +685,7 @@ test("monthly expense list is a paginated visual Flex message", async () => {
   const replies = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, options) => {
-    if (String(url).includes("generativelanguage.googleapis.com")) {
+    if (isGeminiApiUrl(url)) {
       return makeModelResponse({ intent: "monthly_list" });
     }
     replies.push(JSON.parse(options.body));
@@ -679,7 +737,7 @@ test("LINE chart response is a labeled horizontal bar chart with amounts", async
   const replies = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, options) => {
-    if (String(url).includes("generativelanguage.googleapis.com")) {
+    if (isGeminiApiUrl(url)) {
       return makeModelResponse({ intent: "category_summary" });
     }
     replies.push(JSON.parse(options.body));
@@ -706,7 +764,7 @@ test("unknown questions are saved in D1 and shown in the authenticated dashboard
   const replies = [];
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, options) => {
-    if (String(url).includes("generativelanguage.googleapis.com")) {
+    if (isGeminiApiUrl(url)) {
       return makeModelResponse({ intent: "unknown" });
     }
     replies.push(JSON.parse(options.body));
